@@ -1,6 +1,1 @@
-*.o
-*~
-init
-shutdown
-cscope.*
-tags
+build/

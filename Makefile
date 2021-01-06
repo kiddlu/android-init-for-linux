@@ -1,19 +1,34 @@
-CC=gcc
-CFLAGS ?= -pipe -O2 -march=native
-PROGS = init shutdown
- 
-all: $(PROGS)
-OBJS = builtins.o init.o parser.o util.o devices.o strlcpy.o
-ifeq ($(strip $(INIT_BOOTCHART)),true)
-	OBJS += bootchart.o
-	CFLAGS += -DBOOTCHART=1
-endif
-#LIBS = -lrt
-init: $(OBJS) Makefile
-	$(CC) $(LDFLAGS) -o $@ $(OBJS) $(LIBS)
-shutdown: shutdown.c
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $< $(LIBS)
+CPUS=$(shell cat /proc/cpuinfo | grep "processor" | wc -l)
+PWD=$(shell pwd)
+BUILD_DIR=$(PWD)/build
+MAKE_OPT=
 
-	 
+define shcmd-makepre
+	mkdir -p $(BUILD_DIR)
+	cd $(BUILD_DIR) && cmake ..
+endef
+
+define shcmd-make
+	@cd $(BUILD_DIR) && make -j$(CPUS) $(MAKE_OPT) | grep -v "^make\[[0-9]\]:"
+endef
+
+define shcmd-makeclean
+	@cd $(BUILD_DIR) && make clean
+endef
+
+define shcmd-makerm
+	rm -rf $(BUILD_DIR) 
+endef
+
+.PHONY: all clean rm pre
+all: pre 
+	$(call shcmd-make)
+
 clean:
-	rm -f *~ $(PROGS) $(OBJS) 
+	$(call shcmd-makeclean)
+
+rm:
+	$(call shcmd-makerm)
+
+pre:
+	$(call shcmd-makepre)
