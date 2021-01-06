@@ -68,6 +68,8 @@ struct init_request {
 #define INIT_MAGIC              0x03091969
 #define INIT_CMD_RUNLVL         1
 
+#define INITRC_FILE_PATH	"/tmp/init.rc"
+
 static void init_reboot(int sig)
 {
     pid_t pid;
@@ -609,9 +611,10 @@ int main(int argc, char **argv)
     struct pollfd ufds[4];
     pid_t pid;
 
-    mount("tmpfs", "/tmp", "tmpfs", MS_NODEV|MS_NOSUID, "mode=1777");
-    mount("proc", "/proc", "proc", MS_NOEXEC|MS_NODEV|MS_NOSUID, NULL);
-    mount("sysfs", "/sys", "sysfs", MS_NOEXEC|MS_NODEV|MS_NOSUID, NULL);
+    //mount("tmpfs", "/tmp", "tmpfs", MS_NODEV|MS_NOSUID, "mode=1777");
+    //mount("proc", "/proc", "proc", MS_NOEXEC|MS_NODEV|MS_NOSUID, NULL);
+    //mount("sysfs", "/sys", "sysfs", MS_NOEXEC|MS_NODEV|MS_NOSUID, NULL);
+
 #if BOOTCHART
     pid = fork();
     if (!pid) { /* child process */
@@ -656,7 +659,7 @@ int main(int argc, char **argv)
     log_init();
     
     INFO("reading config file\n");
-    parse_config_file("/init.rc");
+    parse_config_file(INITRC_FILE_PATH);
 
     /* pull the kernel commandline and ramdisk properties file in */
     import_kernel_cmdline(0);

@@ -3,7 +3,9 @@ project (init)
 
 add_definitions (
    -pipe -O2 -march=native
-   -Wall -Wno-unused-parameter
+   -Wno-unused-parameter
+   -Wno-unused-variable
+   -Wno-unused-result
    -DBOOTCHART=1
 )
 
