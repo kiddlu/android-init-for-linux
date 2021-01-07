@@ -604,6 +604,7 @@ void drain_action_queue(void)
 int main(int argc, char **argv)
 {
     int init_fd = -1;
+    int property_set_fd = -1;
     int signal_recv_fd = -1;
     int fd, fd_count, s[2];
     struct sigaction act;
@@ -669,6 +670,7 @@ int main(int argc, char **argv)
 
     INFO("device init\n");
 
+    property_init();
 
     if (console[0]) {
         snprintf(tmp, sizeof(tmp), "/dev/%s", console);
@@ -687,7 +689,13 @@ int main(int argc, char **argv)
     action_for_each_trigger("init", action_add_queue_tail);
     drain_action_queue();
 
-     
+        /* read any property files on system or data and
+         * fire up the property service.  This must happen
+         * after the ro.foo properties are set above so
+         * that /data/local.prop cannot interfere with them.
+         */
+    property_set_fd = start_property_service();
+
     /* create a signalling mechanism for the sigchld handler */
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, s) == 0) {
         signal_fd = s[0];
@@ -702,6 +710,7 @@ int main(int argc, char **argv)
     init_fd = open("/dev/initctl", O_RDONLY|O_NONBLOCK);
     /* make sure we actually have all the pieces we need */
     if((init_fd < 0) ||
+        (property_set_fd < 0) ||
         (signal_recv_fd < 0)) {
         ERROR("init startup failure\n");
         return 1;
@@ -716,12 +725,12 @@ int main(int argc, char **argv)
 
     ufds[0].fd = init_fd;
     ufds[0].events = POLLIN;
-    ufds[1].fd = signal_recv_fd;
+    ufds[1].fd = property_set_fd;
     ufds[1].events = POLLIN;
-    fd_count = 2;
+    ufds[2].fd = signal_recv_fd;
+    ufds[2].events = POLLIN;
+    fd_count = 3;
 
-    ufds[2].events = 0;
-    ufds[2].revents = 0;
     ufds[3].events = 0;
     ufds[3].revents = 0;
 
@@ -744,15 +753,18 @@ int main(int argc, char **argv)
         if (nr <= 0)
             continue;
 
-        if (ufds[1].revents == POLLIN) {
+        if (ufds[2].revents == POLLIN) {
             /* we got a SIGCHLD - reap and restart as needed */
             read(signal_recv_fd, tmp, sizeof(tmp));
             while (!wait_for_one_process(0))
                 ;
             continue;
         }
+
         if (ufds[0].revents == POLLIN)
             handle_init_fd(init_fd);
+        if (ufds[1].revents == POLLIN)
+            handle_property_set_fd(property_set_fd);
     }
 
     return 0;

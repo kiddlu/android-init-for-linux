@@ -20,6 +20,8 @@ set(INIT_SOURCES
  
  ${PROJECT_SOURCE_DIR}/init/strlcpy.c
  ${PROJECT_SOURCE_DIR}/init/bootchart.c
+
+ ${PROJECT_SOURCE_DIR}/init/propd.c
 )
 
 #static link
