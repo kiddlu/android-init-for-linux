@@ -9,6 +9,6 @@ service ping /usr/bin/ping 127.0.0.1
     oneshot
     console
 
-service rclocal /tmp/init.local
+service rclocal /tmp/rootdir/init.local
     oneshot
     console

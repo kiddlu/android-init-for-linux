@@ -10,6 +10,7 @@ endef
 
 define shcmd-make
 	@cd $(BUILD_DIR) && make -j$(CPUS) $(MAKE_OPT) | grep -v "^make\[[0-9]\]:"
+	@cp -rf  $(PWD)/init/rootdir /tmp/ 
 endef
 
 define shcmd-makeclean
