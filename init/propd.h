@@ -29,5 +29,5 @@ typedef struct property {
 void handle_property_set_fd(int listen_sock);
 int start_property_service(void);
 void property_init(void);
-int property_set(const char *key, const char *value);
+unsigned char property_set(const char *key, const char *value);
 #endif//_PROPD_H

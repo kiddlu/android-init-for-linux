@@ -118,7 +118,7 @@ static void write_peristent_property(const char *name, const char *value)
     }
 }
 
-int property_set(const char *key, const char *value)
+unsigned char property_set(const char *key, const char *value)
 {
     if (persistent_properties_loaded &&
             strncmp("persist.", key, strlen("persist.")) == 0) {
@@ -127,8 +127,12 @@ int property_set(const char *key, const char *value)
          * to prevent them from being overwritten by default values.
          */
         write_peristent_property(key, value);
-    }
-	set_property(key, value);
+    } else if(memcmp(key,"ctl.",4) == 0) {
+        handle_control_message(key+4, key + PROPERTY_KEY_MAX);
+		return (1);
+	} 
+	
+	return set_property(key, value);
 }
 
 static unsigned char create_list_file(const char* fileName)
@@ -292,15 +296,12 @@ static unsigned char handle_request(int fd)
             return (0);
         }
         //printf("SET property '%s'\n", reqBuf);
-        if(memcmp(reqBuf,"ctl.",4) == 0) {
-            handle_control_message(reqBuf+4, reqBuf + PROPERTY_KEY_MAX);
-			valueBuf[0] = 1;
-		} else {
-        	if (property_set(reqBuf, reqBuf + PROPERTY_KEY_MAX))
-            	valueBuf[0] = 1;
-        	else
-            	valueBuf[0] = 0;
-		}
+
+       	if (property_set(reqBuf, reqBuf + PROPERTY_KEY_MAX))
+           	valueBuf[0] = 1;
+       	else
+           	valueBuf[0] = 0;
+
         if (write(fd, valueBuf, 1) != 1) {
             fprintf(stderr, "Bad write on set\n");
             return (0);
