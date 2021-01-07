@@ -40,6 +40,7 @@
 
 #include "devices.h"
 #include "init.h"
+#include "propd.h"
 #include "bootchart.h"
 
 #if BOOTCHART
@@ -50,6 +51,16 @@ static char console[32];
 static char serialno[32];
 static char bootmode[32];
 static char qemu[32];
+
+static void notify_service_state(const char *name, const char *state)
+{
+    char pname[PROP_NAME_MAX];
+    int len = strlen(name);
+    if ((len + 10) > PROP_NAME_MAX)
+        return;
+    snprintf(pname, sizeof(pname), "init.svc.%s", name);
+    property_set(pname, state);
+}
 
 static int have_console;
 static char *console_name = "/dev/console";
@@ -327,6 +338,7 @@ void service_start(struct service *svc, const char *dynamic_args)
     svc->pid = pid;
     svc->flags |= SVC_RUNNING;
 
+    notify_service_state(svc->name, "running");
 }
 
 void service_stop(struct service *svc)
@@ -344,7 +356,9 @@ void service_stop(struct service *svc)
     if (svc->pid) {
         NOTICE("service '%s' is being killed\n", svc->name);
         kill(-svc->pid, SIGTERM);
+        notify_service_state(svc->name, "stopping");
     } else {
+        notify_service_state(svc->name, "stopped");
     }
 }
 
@@ -395,6 +409,7 @@ static int wait_for_one_process(int block)
 
         /* disabled processes do not get restarted automatically */
     if (svc->flags & SVC_DISABLED) {
+        notify_service_state(svc->name, "stopped");
         return 0;
     }
 
@@ -417,13 +432,13 @@ static int wait_for_one_process(int block)
         }
     }
 
-    svc->flags |= SVC_RESTARTING;
-
     /* Execute all onrestart commands for this service. */
     list_for_each(node, &svc->onrestart.commands) {
         cmd = node_to_item(node, struct command, clist);
         cmd->func(cmd->nargs, cmd->args);
     }
+    svc->flags |= SVC_RESTARTING;
+    notify_service_state(svc->name, "restarting");
     return 0;
 }
 

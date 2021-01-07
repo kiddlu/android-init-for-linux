@@ -9,6 +9,11 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <ctype.h>
+#include <fcntl.h>
+#include <stdarg.h>
+#include <dirent.h>
+#include <limits.h>
 #include <errno.h>
 #include <assert.h>
 #include <sys/types.h>
@@ -127,6 +132,29 @@ static bool set_property(const char* key, const char* value)
 
     return true;
 }
+/*
+static void write_peristent_property(const char *name, const char *value)
+{
+    const char *tempPath = PERSISTENT_PROPERTY_DIR "/.temp";
+    char path[PATH_MAX];
+    int fd, length;
+
+    snprintf(path, sizeof(path), "%s/%s", PERSISTENT_PROPERTY_DIR, name);
+
+    fd = open(tempPath, O_WRONLY|O_CREAT|O_TRUNC, 0600);
+    if (fd < 0) {
+        ERROR("Unable to write persistent property to temp file %s errno: %d\n", tempPath, errno);
+        return;   
+    }
+    write(fd, value, strlen(value));
+    close(fd);
+
+    if (rename(tempPath, path)) {
+        unlink(tempPath);
+        ERROR("Unable to rename persistent property file %s to %s\n", tempPath, path);
+    }
+}
+*/
 
 static bool create_list_file(const char* fileName)
 {
@@ -297,10 +325,15 @@ static bool handle_request(int fd)
             return false;
         }
         //printf("SET property '%s'\n", reqBuf);
-        if (set_property(reqBuf, reqBuf + PROPERTY_KEY_MAX))
-            valueBuf[0] = 1;
-        else
-            valueBuf[0] = 0;
+        if(memcmp(reqBuf,"ctl.",4) == 0) {
+            handle_control_message(reqBuf+4, reqBuf + PROPERTY_KEY_MAX);
+			valueBuf[0] = 1;
+		} else {
+        	if (set_property(reqBuf, reqBuf + PROPERTY_KEY_MAX))
+            	valueBuf[0] = 1;
+        	else
+            	valueBuf[0] = 0;
+		}
         if (write(fd, valueBuf, 1) != 1) {
             fprintf(stderr, "Bad write on set\n");
             return false;
@@ -322,9 +355,7 @@ static bool handle_request(int fd)
     return true;
 }
 
-/*
- * Serve up properties.
- */
+
 void handle_property_set_fd(int listen_sock)
 {
             struct sockaddr_un from;
@@ -358,24 +389,109 @@ void handle_property_set_fd(int listen_sock)
             }
 }
 
-
-/*
- * Thread entry point.
- *
- * This just sits and waits for a new connection.  It hands it off to the
- * main thread and then goes back to waiting.
- *
- * There is currently no "polite" way to shut this down.
- */
-int start_property_service(void)
+#if 0
+static void load_properties(char *data)
 {
-    int fd = create_property_socket(SYSTEM_PROPERTY_PIPE_NAME);
-    set_default_properties();
-	
-	return fd;
+    char *key, *value, *eol, *sol, *tmp;
+
+    sol = data;
+    while((eol = strchr(sol, '\n'))) {
+        key = sol;
+        *eol++ = 0;
+        sol = eol;
+
+        value = strchr(key, '=');
+        if(value == 0) continue;
+        *value++ = 0;
+
+        while(isspace(*key)) key++;
+        if(*key == '#') continue;
+        tmp = value - 2;
+        while((tmp > key) && isspace(*tmp)) *tmp-- = 0;
+
+        while(isspace(*value)) value++;
+        tmp = eol - 2;
+        while((tmp > value) && isspace(*tmp)) *tmp-- = 0;
+
+        property_set(key, value);
+    }
 }
+
+static void load_properties_from_file(const char *fn)
+{
+    char *data;
+    unsigned sz;
+
+    data = read_file(fn, &sz);
+
+    if(data != 0) {
+        load_properties(data);
+        free(data);
+    }
+}
+
+static void load_persistent_properties()
+{
+    DIR* dir = opendir(PERSISTENT_PROPERTY_DIR);
+    struct dirent*  entry;
+    char path[PATH_MAX];
+    char value[PROP_VALUE_MAX];
+    int fd, length;
+
+    if (dir) {
+        while ((entry = readdir(dir)) != NULL) {
+            if (strncmp("persist.", entry->d_name, strlen("persist.")))
+                continue;
+#if HAVE_DIRENT_D_TYPE
+            if (entry->d_type != DT_REG)
+                continue;
+#endif
+            /* open the file and read the property value */
+            snprintf(path, sizeof(path), "%s/%s", PERSISTENT_PROPERTY_DIR, entry->d_name);
+            fd = open(path, O_RDONLY);
+            if (fd >= 0) {
+                length = read(fd, value, sizeof(value) - 1);
+                if (length >= 0) {
+                    value[length] = 0;
+                    set_property(entry->d_name, value);
+                } else {
+                    printf("Unable to read persistent property file %s errno: %d\n", path, errno);
+                }
+                close(fd);
+            } else {
+                printf"Unable to open persistent property file %s errno: %d\n", path, errno);
+            }
+        }
+        closedir(dir);
+    } else {
+        printf("Unable to open persistent property directory %s errno: %d\n", PERSISTENT_PROPERTY_DIR, errno);
+    }
+    
+    persistent_properties_loaded = 1;
+}
+#endif
 
 void property_init(void)
 {
+    set_default_properties();
+	//load_properties_from_file(PROP_PATH_SYSTEM_DEFAULT);
 }
 
+int start_property_service(void)
+{
+    int fd = create_property_socket(SYSTEM_PROPERTY_PIPE_NAME);
+    /* Read persistent properties after all default values have been loaded. */
+    //load_persistent_properties();
+
+    if(fd < 0) return -1;
+    fcntl(fd, F_SETFD, FD_CLOEXEC);
+    fcntl(fd, F_SETFL, O_NONBLOCK);
+
+
+    return fd;
+}
+
+int property_set(const char *key, const char *value)
+{
+	set_property(key, value);
+}
