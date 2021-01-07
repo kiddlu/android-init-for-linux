@@ -23,49 +23,20 @@
 #include <poll.h>
 
 #include "propd.h"
+#define PERSISTENT_PROPERTY_DIR  "/tmp/property"
+#define PROP_PATH_SYSTEM_DEFAULT "/tmp/property/defaul.prop"
 
-#ifndef bool
-typedef unsigned char bool;
-#endif
+static int persistent_properties_loaded = 0;
 
-#ifndef true
-#define true (1)
-#endif
 
 #ifndef false
 #define false (0)
 #endif
 
-static bool set_property(const char* key, const char* value);
-
 static list_declare(prop_list);
 
-/*
- * Set default values for several properties.
- */
-static void set_default_properties(void)
-{
-    static const struct {
-        const char* key;
-        const char* value;
-    } propList[] = {
-        { "ro.proccess.name", "propd" },
-        { "ro.os.name", "GNU/Linux" },
-        { "ro.test.string", "HelloWorld" },
-    };
 
-    for (int i = 0; i < NELEM(propList); i++)
-        set_property(propList[i].key, propList[i].value);
-}
-
-/*
- * Get the value of a property.
- *
- * "valueBuf" must hold at least PROPERTY_VALUE_MAX bytes.
- *
- * Returns "true" if the property was found.
- */
-static bool get_property(const char* key, char* valueBuf)
+static unsigned char get_property(const char* key, char* valueBuf)
 {
     assert(key != NULL);
     assert(valueBuf != NULL);
@@ -85,23 +56,15 @@ static bool get_property(const char* key, char* valueBuf)
             }
             assert(strlen(prop->value) < PROPERTY_VALUE_MAX);
             strcpy(valueBuf, prop->value);
-            return true;
+            return (1);
         }
     }
 
     //printf("Prop: get [%s] not found\n", key);
-    return false;
+    return (0);
 }
 
-/*
- * Set the value of a property, replacing it if it already exists.
- *
- * If "value" is NULL, the property is removed.
- *
- * If the property is immutable, this returns "false" without doing
- * anything.  (Not implemented.)
- */
-static bool set_property(const char* key, const char* value)
+static unsigned char set_property(const char* key, const char* value)
 {
 	struct listnode *node;
 	Property *prop;
@@ -120,7 +83,7 @@ static bool set_property(const char* key, const char* value)
                 list_remove(node);
 				free(prop);
             }
-            return true;
+            return (1);
         }
     }
 
@@ -130,9 +93,9 @@ static bool set_property(const char* key, const char* value)
     strcpy(new->value, value);
 	list_add_tail(&prop_list, &(new->plist));
 
-    return true;
+    return (1);
 }
-/*
+
 static void write_peristent_property(const char *name, const char *value)
 {
     const char *tempPath = PERSISTENT_PROPERTY_DIR "/.temp";
@@ -154,13 +117,25 @@ static void write_peristent_property(const char *name, const char *value)
         ERROR("Unable to rename persistent property file %s to %s\n", tempPath, path);
     }
 }
-*/
 
-static bool create_list_file(const char* fileName)
+int property_set(const char *key, const char *value)
+{
+    if (persistent_properties_loaded &&
+            strncmp("persist.", key, strlen("persist.")) == 0) {
+        /* 
+         * Don't write properties to disk until after we have read all default properties
+         * to prevent them from being overwritten by default values.
+         */
+        write_peristent_property(key, value);
+    }
+	set_property(key, value);
+}
+
+static unsigned char create_list_file(const char* fileName)
 {
 
     struct stat sb;
-    bool result = false;
+    unsigned char result = (0);
     FILE *fp = NULL;
     int cc;
 	char lineBuf[PROPERTY_KEY_MAX + PROPERTY_VALUE_MAX + 20];
@@ -204,7 +179,7 @@ static bool create_list_file(const char* fileName)
     if (fp != NULL)
         fclose(fp);
 
-	return true;
+	return (1);
 
 bail:
     if (fp != NULL)
@@ -213,14 +188,10 @@ bail:
 }
 
 
-/*
- * Create a UNIX domain socket, carefully removing it if it already
- * exists.
- */
 static int create_property_socket(const char* fileName)
 {
     struct stat sb;
-    bool result = false;
+    unsigned char result = (0);
     int sock = -1;
     int cc;
 
@@ -281,12 +252,8 @@ bail:
     return result;
 }
 
-/*
- * Handle a client request.
- *
- * Returns true on success, false if the fd should be closed.
- */
-static bool handle_request(int fd)
+
+static unsigned char handle_request(int fd)
 {
     char reqBuf[PROPERTY_KEY_MAX + PROPERTY_VALUE_MAX];
     char valueBuf[1 + PROPERTY_VALUE_MAX];
@@ -297,7 +264,7 @@ static bool handle_request(int fd)
     /* read the command byte; this determines the message length */
     actual = read(fd, reqBuf, 1);
     if (actual <= 0)
-        return false;
+        return (0);
 
     if (reqBuf[0] == kSystemPropertyGet) {
         actual = read(fd, reqBuf, PROPERTY_KEY_MAX);
@@ -305,7 +272,7 @@ static bool handle_request(int fd)
         if (actual != PROPERTY_KEY_MAX) {
             fprintf(stderr, "Bad read on get: %d of %d\n",
                 (int) actual, PROPERTY_KEY_MAX);
-            return false;
+            return (0);
         }
         if (get_property(reqBuf, valueBuf+1))
             valueBuf[0] = 1;
@@ -315,28 +282,28 @@ static bool handle_request(int fd)
         //    reqBuf, valueBuf[0], valueBuf+1);
         if (write(fd, valueBuf, sizeof(valueBuf)) != sizeof(valueBuf)) {
             fprintf(stderr, "Bad write on get\n");
-            return false;
+            return (0);
         }
     } else if (reqBuf[0] == kSystemPropertySet) {
         actual = read(fd, reqBuf, PROPERTY_KEY_MAX + PROPERTY_VALUE_MAX);
         if (actual != PROPERTY_KEY_MAX + PROPERTY_VALUE_MAX) {
             fprintf(stderr, "Bad read on set: %d of %d\n",
                 (int) actual, PROPERTY_KEY_MAX + PROPERTY_VALUE_MAX);
-            return false;
+            return (0);
         }
         //printf("SET property '%s'\n", reqBuf);
         if(memcmp(reqBuf,"ctl.",4) == 0) {
             handle_control_message(reqBuf+4, reqBuf + PROPERTY_KEY_MAX);
 			valueBuf[0] = 1;
 		} else {
-        	if (set_property(reqBuf, reqBuf + PROPERTY_KEY_MAX))
+        	if (property_set(reqBuf, reqBuf + PROPERTY_KEY_MAX))
             	valueBuf[0] = 1;
         	else
             	valueBuf[0] = 0;
 		}
         if (write(fd, valueBuf, 1) != 1) {
             fprintf(stderr, "Bad write on set\n");
-            return false;
+            return (0);
         }
     } else if (reqBuf[0] == kSystemPropertyList) {
         /* TODO */
@@ -345,51 +312,46 @@ static bool handle_request(int fd)
         valueBuf[0] = 1;
         if (write(fd, valueBuf, 1) != 1) {
             fprintf(stderr, "Bad write on set\n");
-            return false;
+            return (0);
         }			
     } else {
         fprintf(stderr, "Unexpected request %d from prop client\n", reqBuf[0]);
-        return false;
+        return (0);
     }
 
-    return true;
+    return (1);
 }
 
-
-void handle_property_set_fd(int listen_sock)
+void handle_property_set_fd(int fd)
 {
             struct sockaddr_un from;
             socklen_t fromlen;
             int newSock;
-			int fd;
 
             fromlen = sizeof(from);
-            newSock = accept(listen_sock, (struct sockaddr*) &from, &fromlen);
+            newSock = accept(fd, (struct sockaddr*) &from, &fromlen);
             if (newSock < 0) {
                 printf(
                     "AF_UNIX accept failed (errno=%d)\n", errno);
             } else {
                 //printf("new props connection on %d --> %d\n",
                 //    mListenSock, newSock);
-
-				fd = newSock;
             }
 
 
-            bool ok = true;
+            unsigned char ok = (1);
 
 
-            ok = handle_request(fd);
+            ok = handle_request(newSock);
 
             if (ok) {
 
             } else {
                 //printf("--- closing %d\n", fd);
-                close(fd);
+                close(newSock);
             }
 }
 
-#if 0
 static void load_properties(char *data)
 {
     char *key, *value, *eol, *sol, *tmp;
@@ -435,7 +397,7 @@ static void load_persistent_properties()
     DIR* dir = opendir(PERSISTENT_PROPERTY_DIR);
     struct dirent*  entry;
     char path[PATH_MAX];
-    char value[PROP_VALUE_MAX];
+    char value[PROPERTY_VALUE_MAX];
     int fd, length;
 
     if (dir) {
@@ -453,35 +415,53 @@ static void load_persistent_properties()
                 length = read(fd, value, sizeof(value) - 1);
                 if (length >= 0) {
                     value[length] = 0;
-                    set_property(entry->d_name, value);
+                    property_set(entry->d_name, value);
                 } else {
-                    printf("Unable to read persistent property file %s errno: %d\n", path, errno);
+                    ERROR("Unable to read persistent property file %s errno: %d\n", path, errno);
                 }
                 close(fd);
             } else {
-                printf"Unable to open persistent property file %s errno: %d\n", path, errno);
+                ERROR("Unable to open persistent property file %s errno: %d\n", path, errno);
             }
         }
         closedir(dir);
     } else {
-        printf("Unable to open persistent property directory %s errno: %d\n", PERSISTENT_PROPERTY_DIR, errno);
+        ERROR("Unable to open persistent property directory %s errno: %d\n", PERSISTENT_PROPERTY_DIR, errno);
     }
     
     persistent_properties_loaded = 1;
 }
-#endif
+
+/*
+ * Set default values for several properties.
+ */
+static void set_default_properties(void)
+{
+    static const struct {
+        const char* key;
+        const char* value;
+    } propList[] = {
+        { "ro.proccess.name", "propd" },
+        { "ro.os.name", "GNU/Linux" },
+        { "ro.test.string", "HelloWorld" },
+    };
+
+    for (int i = 0; i < NELEM(propList); i++)
+        property_set(propList[i].key, propList[i].value);
+}
+
 
 void property_init(void)
 {
     set_default_properties();
-	//load_properties_from_file(PROP_PATH_SYSTEM_DEFAULT);
+	load_properties_from_file(PROP_PATH_SYSTEM_DEFAULT);
 }
 
 int start_property_service(void)
 {
     int fd = create_property_socket(SYSTEM_PROPERTY_PIPE_NAME);
     /* Read persistent properties after all default values have been loaded. */
-    //load_persistent_properties();
+    load_persistent_properties();
 
     if(fd < 0) return -1;
     fcntl(fd, F_SETFD, FD_CLOEXEC);
@@ -489,9 +469,4 @@ int start_property_service(void)
 
 
     return fd;
-}
-
-int property_set(const char *key, const char *value)
-{
-	set_property(key, value);
 }
