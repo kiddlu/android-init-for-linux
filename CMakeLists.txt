@@ -27,7 +27,17 @@ set(INIT_SOURCES
 #static link
 #set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
 
-include_directories (${PROJECT_SOURCE_DIR}/init/)
-
 add_executable(init ${INIT_SOURCES})
 target_link_libraries(init)
+
+add_library(prop STATIC ${PROJECT_SOURCE_DIR}/libprop/properties.c)
+
+add_executable(service  ${PROJECT_SOURCE_DIR}/libprop/service.c)
+target_link_libraries(service prop pthread)
+
+add_executable(getprop  ${PROJECT_SOURCE_DIR}/libprop/getprop.c)
+target_link_libraries(getprop prop pthread)
+
+add_executable(setprop  ${PROJECT_SOURCE_DIR}/libprop/setprop.c)
+target_link_libraries(setprop prop pthread)
+
