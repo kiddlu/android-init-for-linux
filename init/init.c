@@ -42,6 +42,7 @@
 #include "init.h"
 #include "propd.h"
 #include "bootchart.h"
+#include "path.h"
 
 #if BOOTCHART
 static int   bootchart_count;
@@ -78,8 +79,6 @@ struct init_request {
 
 #define INIT_MAGIC              0x03091969
 #define INIT_CMD_RUNLVL         1
-
-#define INITRC_FILE_PATH	"/tmp/rootdir/init.rc"
 
 static void init_reboot(int sig)
 {

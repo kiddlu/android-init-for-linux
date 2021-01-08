@@ -23,8 +23,7 @@
 #include <poll.h>
 
 #include "propd.h"
-#define PERSISTENT_PROPERTY_DIR  "/tmp/rootdir/property"
-#define PROP_PATH_SYSTEM_DEFAULT "/tmp/rootdir/data/default.prop"
+#include "path.h"
 
 static int persistent_properties_loaded = 0;
 
