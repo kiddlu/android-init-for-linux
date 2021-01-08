@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.8)
 project (init)
 
 add_definitions (
-   -pipe -O2 -march=native
+   -pipe -O2
    -Wno-unused-parameter
    -Wno-unused-variable
    -Wno-unused-result

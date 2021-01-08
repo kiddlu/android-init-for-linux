@@ -13,19 +13,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#define _GNU_SOURCE
 
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-
-#define __USE_GNU /* for __USE_GNU */
 #include <fcntl.h>
-#undef __USE_GNU
 #include <dirent.h>
 #include <unistd.h>
 #include <string.h>
+#include <grp.h>
 
 #include <sys/socket.h>
 #include <sys/un.h>

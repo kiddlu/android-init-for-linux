@@ -33,7 +33,7 @@
 #include <sys/un.h>
 #include <sys/reboot.h>
 #include <linux/reboot.h>
-
+#include <grp.h>
 #include <termios.h>
 #include <linux/kd.h>
 
