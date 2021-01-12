@@ -5,10 +5,10 @@ on init
 on boot
     class_start default
 
-service ping /usr/bin/ping 127.0.0.1 
+service adbd /platform/bin/adbd
     oneshot
     console
 
-service rclocal /tmp/rootdir/init.local
+service rclocal /platform/init.local
     oneshot
     console
